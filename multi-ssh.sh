@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Multi-SSH connection tool with tmux
-# Usage: 
+# Multi-SSH connection tool with screen
+# Usage:
 #   echo -e 'host1\nhost2' | multi-ssh.sh [command]
 #   multi-ssh.sh host1 host2 [command]
 #   cat hostfile | multi-ssh.sh
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # Configuration
-SSH_CMD="${SSH_CMD:-tsh ssh -A}"
+SSH_CMD="${SSH_CMD:-ssh -A}"
 LAYOUT="${LAYOUT:-tiled}"
 SESSION_NAME="${SESSION_NAME:-multi-ssh-$$}"
 VERBOSE="${VERBOSE:-0}"
@@ -19,6 +19,17 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Cleanup function to kill screen session if script exits unexpectedly
+cleanup() {
+    if [[ -n "${SESSION_NAME:-}" ]] && screen -list | grep -q "$SESSION_NAME"; then
+        log "Cleaning up screen session: $SESSION_NAME"
+        screen -S "$SESSION_NAME" -X quit || true
+    fi
+}
+
+# Set up trap to call cleanup on script exit
+trap cleanup EXIT
 
 # Logging function
 log() {
@@ -45,27 +56,24 @@ OPTIONS:
     -v, --verbose       Enable verbose output
     -s, --session NAME  Use specific tmux session name
     -l, --layout LAYOUT Set tmux layout (default: tiled)
-    -c, --ssh-cmd CMD   SSH command to use (default: tsh ssh -A)
-    -n, --no-sync       Don't synchronize panes
+    -c, --ssh-cmd CMD   SSH command to use (default: ssh -A)
     -k, --kill-session  Kill existing session if it exists
 
 ENVIRONMENT VARIABLES:
-    SSH_CMD             SSH command (default: tsh ssh -A)
+    SSH_CMD             SSH command (default: ssh -A)
     LAYOUT              Tmux layout (default: tiled)
-    SESSION_NAME        Session name (default: multi-ssh-\$\$)
+    SESSION_NAME        Session name (default: multi-ssh-$$)
     VERBOSE             Enable verbose output (0/1)
 
 EXAMPLES:
     $0 host1 host2 host3
     echo -e 'web1\nweb2\ndb1' | $0 -- htop
-    $0 -v -l even-horizontal host1 host2
 EOF
 }
 
 # Parse command line arguments
 HOSTS=()
 COMMAND=""
-NO_SYNC=0
 KILL_SESSION=0
 PARSING_HOSTS=1
 
@@ -90,10 +98,6 @@ while [[ $# -gt 0 ]]; do
         -c|--ssh-cmd)
             SSH_CMD="$2"
             shift 2
-            ;;
-        -n|--no-sync)
-            NO_SYNC=1
-            shift
             ;;
         -k|--kill-session)
             KILL_SESSION=1
@@ -126,7 +130,7 @@ if [[ ${#HOSTS[@]} -eq 0 ]]; then
         usage
         exit 1
     fi
-    
+
     log "Reading hosts from stdin..."
     while IFS= read -r line; do
         # Skip empty lines and comments
@@ -148,63 +152,28 @@ if ! command -v tmux &> /dev/null; then
     exit 1
 fi
 
-# Ensure tmux server is running (optional - tmux will start it automatically)
-if ! tmux info &>/dev/null; then
-    log "Starting tmux server..."
-    tmux start-server
+# If not running inside tmux, ask the user to start tmux manually
+if [[ -z "${TMUX:-}" ]]; then
+    error "This script must be run inside a tmux session. Please start tmux first (e.g., run 'tmux'), then run this script inside a tmux pane."
+    exit 1
 fi
 
-# Kill existing session if requested
-if [[ $KILL_SESSION -eq 1 ]] && tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-    log "Killing existing session: $SESSION_NAME"
-    tmux kill-session -t "$SESSION_NAME"
-fi
-
-# Create or attach to session
-if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-    warn "Session '$SESSION_NAME' already exists. Use -k to kill it first."
-    log "Attaching to existing session"
-    exec tmux attach-session -t "$SESSION_NAME"
-fi
-
-log "Creating new tmux session: $SESSION_NAME"
-
-# Create the session with the first host
+log "Adding panes to current tmux window."
 FIRST_HOST="${HOSTS[0]}"
 FULL_CMD="$SSH_CMD $FIRST_HOST"
 if [[ -n "$COMMAND" ]]; then
     FULL_CMD="$FULL_CMD $COMMAND"
 fi
-
-log "Starting first connection: $FULL_CMD"
-tmux new-session -d -s "$SESSION_NAME" "$FULL_CMD"
-
-# Add remaining hosts as split windows
+tmux send-keys "$FULL_CMD" Enter
 for ((i=1; i<${#HOSTS[@]}; i++)); do
     HOST="${HOSTS[$i]}"
     FULL_CMD="$SSH_CMD $HOST"
     if [[ -n "$COMMAND" ]]; then
         FULL_CMD="$FULL_CMD $COMMAND"
     fi
-    
-    log "Adding connection $((i+1))/${#HOSTS[@]}: $HOST"
-    tmux split-window -t "$SESSION_NAME" "$FULL_CMD"
+    tmux split-window "$FULL_CMD"
+    tmux select-layout "$LAYOUT"
 done
-
-# Set layout
-log "Setting layout: $LAYOUT"
-tmux select-layout -t "$SESSION_NAME" "$LAYOUT"
-
-# Synchronize panes unless disabled
-if [[ $NO_SYNC -eq 0 ]]; then
-    log "Enabling pane synchronization"
-    tmux set-window-option -t "$SESSION_NAME" synchronize-panes on
-fi
-
-# Set window title
-tmux rename-window -t "$SESSION_NAME" "multi-ssh"
-
-log "Setup complete. Attaching to session."
-
-# Attach to the session
-exec tmux attach-session -t "$SESSION_NAME"
+log "Enabling pane synchronization"
+tmux set-window-option synchronize-panes on
+log "All panes added to current tmux window."

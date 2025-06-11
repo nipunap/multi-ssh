@@ -1,14 +1,14 @@
 # Multi-SSH Tool
 
-A powerful bash script for connecting to multiple Linux hosts simultaneously using tmux. Perfect for system administrators, DevOps engineers, and anyone managing multiple servers.
+A powerful bash script for connecting to multiple Linux hosts simultaneously using tmux. Works within your existing tmux session by splitting the current window into multiple panes. Perfect for system administrators, DevOps engineers, and anyone managing multiple servers.
 
 ## Features
 
+- **Works in Current tmux Window**: Splits your current tmux window into multiple panes
 - **Multiple Connection Methods**: Command-line arguments, stdin, or host files
 - **Synchronized Input**: Type commands once, execute on all hosts
 - **Flexible SSH Commands**: Support for different SSH clients (ssh, tsh, etc.)
 - **Customizable Layouts**: Choose from various tmux pane arrangements
-- **Session Management**: Named sessions with conflict handling
 - **Error Handling**: Robust validation and helpful error messages
 - **Verbose Logging**: Optional detailed output for debugging
 
@@ -40,8 +40,23 @@ chmod +x multi-ssh.sh
 # Copy to your PATH (optional)
 cp multi-ssh.sh /usr/local/bin/
 
-# Connect to multiple hosts
+# Start tmux first
+tmux
+
+# Then run the script inside tmux
 ./multi-ssh.sh web1 web2 db1
+```
+
+## Important: Must Run Inside tmux
+
+**This script must be run from within a tmux session.** It will split your current tmux window into multiple panes, one for each host.
+
+```bash
+# Step 1: Start tmux
+tmux
+
+# Step 2: Run the multi-ssh script
+./multi-ssh.sh host1 host2 host3
 ```
 
 ## Usage
@@ -99,10 +114,9 @@ cat hosts.txt | ./multi-ssh.sh
 |--------|-------------|---------|
 | `-h, --help` | Show help message | - |
 | `-v, --verbose` | Enable verbose output | Off |
-| `-s, --session NAME` | Use specific session name | `multi-ssh-$$` |
+| `-s, --session NAME` | Use specific session name | `multi-ssh-$` |
 | `-l, --layout LAYOUT` | Set tmux layout | `tiled` |
-| `-c, --ssh-cmd CMD` | SSH command to use | `tsh ssh -A` |
-| `-n, --no-sync` | Don't synchronize panes | Sync enabled |
+| `-c, --ssh-cmd CMD` | SSH command to use | `ssh -A` |
 | `-k, --kill-session` | Kill existing session | Keep existing |
 
 ## Environment Variables
@@ -121,6 +135,9 @@ export VERBOSE=1
 ### Basic Examples
 
 ```bash
+# Start tmux first
+tmux
+
 # Connect to three web servers
 ./multi-ssh.sh web1 web2 web3
 
@@ -134,14 +151,11 @@ SSH_CMD="ssh -i ~/.ssh/prod_key" ./multi-ssh.sh prod1 prod2
 ### Advanced Examples
 
 ```bash
+# Start tmux first
+tmux
+
 # Verbose mode with custom layout
 ./multi-ssh.sh -v -l even-horizontal web1 web2 web3
-
-# Named session without pane synchronization
-./multi-ssh.sh -s production -n prod1 prod2 prod3
-
-# Replace existing session
-./multi-ssh.sh -k -s maintenance server1 server2
 
 # Custom SSH command for specific environment
 ./multi-ssh.sh -c "ssh -o ConnectTimeout=5" host1 host2
@@ -158,10 +172,12 @@ api1.prod.company.com
 api2.prod.company.com
 EOF
 
-# Connect to all production servers
-cat prod_hosts.txt | ./multi-ssh.sh -s production -v
+# Start tmux and connect to all production servers
+tmux
+cat prod_hosts.txt | ./multi-ssh.sh -v
 
-# Quick system check across all servers
+# Quick system check across all servers (in new tmux window)
+tmux new-window
 cat prod_hosts.txt | ./multi-ssh.sh -- 'uptime && df -h / && free -m'
 ```
 
@@ -209,13 +225,13 @@ sudo yum install tmux  # CentOS/RHEL
 brew install tmux      # macOS
 ```
 
-**2. "Session already exists"**
+**2. "This script must be run inside a tmux session"**
 ```bash
-# Use -k to kill existing session
-./multi-ssh.sh -k -s mysession host1 host2
+# Start tmux first
+tmux
 
-# Or use different session name
-./multi-ssh.sh -s newsession host1 host2
+# Then run your multi-ssh command
+./multi-ssh.sh host1 host2
 ```
 
 **3. SSH Connection Failures**
@@ -268,24 +284,6 @@ grep -E '^\[webservers\]' -A 10 inventory.ini | grep -v '^\[' | ./multi-ssh.sh
 ```bash
 # Connect to multiple Docker containers
 docker ps --format "table {{.Names}}" | tail -n +2 | xargs -I {} ./multi-ssh.sh {}
-```
-
-### Systemd Service
-
-Create a systemd service for regular connections:
-
-```ini
-[Unit]
-Description=Multi-SSH to production servers
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/multi-ssh.sh -s production prod1 prod2 prod3
-User=admin
-
-[Install]
-WantedBy=multi-user.target
 ```
 
 ## Security Considerations
