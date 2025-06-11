@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # Configuration
-SSH_CMD="${SSH_CMD:-tsh ssh -A}"
+SSH_CMD="${SSH_CMD:-ssh -A}"
 LAYOUT="${LAYOUT:-tiled}"
 SESSION_NAME="${SESSION_NAME:-multi-ssh-$$}"
 VERBOSE="${VERBOSE:-0}"
