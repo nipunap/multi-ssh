@@ -20,17 +20,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Cleanup function to kill screen session if script exits unexpectedly
-cleanup() {
-    if [[ -n "${SESSION_NAME:-}" ]] && screen -list | grep -q "$SESSION_NAME"; then
-        log "Cleaning up screen session: $SESSION_NAME"
-        screen -S "$SESSION_NAME" -X quit || true
-    fi
-}
-
-# Set up trap to call cleanup on script exit
-trap cleanup EXIT
-
 # Logging function
 log() {
     if [[ $VERBOSE -eq 1 ]]; then
